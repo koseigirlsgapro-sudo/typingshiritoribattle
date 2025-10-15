@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>タイピングしりとりバトル - 2P対戦</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@700&family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+body {
+font-family: 'M PLUS Rounded 1c', sans-serif;
+}
+.font-game {
+font-family: 'Press Start 2P', cursive;
+}
+.hp-bar-inner {
+transition: width 0.5s ease-in-out;
+}
+.damage-popup {
+position: absolute;
+top: -30px;
+left: 50%;
+transform: translateX(-50%);
+opacity: 0;
+animation: float-up 1.5s ease-out forwards;
+text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+}
+@keyframes float-up {
+0% { top: -30px; opacity: 1; }
+100% { top: -100px; opacity: 0; }
+}
+.player-area.active {
+transform: scale(1.03);
+box-shadow: 0 0 15px rgba(250, 204, 21, 0.7);
+}
+.player-area {
+transition: all 0.3s ease-in-out;
+}
+</style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen p-4">
+
+<div id="game-container" class="w-full max-w-2xl bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 border-4 border-purple-500">
+
+<h1 class="text-2xl md:text-3xl font-bold text-center mb-6 text-yellow-300 font-game tracking-wider">Shiritori Battle 2P</h1>
+
+<!-- Players HP Area -->
+<div class="grid grid-cols-2 gap-4 mb-6">
+<!-- Player 1 -->
+<div id="player1-area" class="player-area bg-gray-700 p-4 rounded-lg border-2 border-blue-400">
+<h2 class="text-lg font-bold text-blue-300">PLAYER 1</h2>
+<div class="w-full bg-gray-600 rounded-full h-6 mt-2 relative">
+<div id="player1-hp-bar" class="bg-blue-500 h-6 rounded-full hp-bar-inner"></div>
+<span id="player1-hp-text" class="absolute inset-0 flex items-center justify-center font-bold text-sm"></span>
+</div>
+<div id="player1-damage-container" class="relative h-10"></div>
+</div>
+<!-- Player 2 -->
+<div id="player2-area" class="player-area bg-gray-700 p-4 rounded-lg border-2 border-red-400">
+<h2 class="text-lg font-bold text-red-300">PLAYER 2</h2>
+<div class="w-full bg-gray-600 rounded-full h-6 mt-2 relative">
+<div id="player2-hp-bar" class="bg-red-500 h-6 rounded-full hp-bar-inner"></div>
+<span id="player2-hp-text" class="absolute inset-0 flex items-center justify-center font-bold text-sm"></span>
+</div>
+<div id="player2-damage-container" class="relative h-10"></div>
+</div>
+</div>
+
+<!-- Game Screen -->
+<div class="bg-gray-900/50 rounded-lg p-6 mb-6 text-center">
+<p class="text-gray-400 mb-2">前の単語:</p>
+<p id="last-word" class="text-2xl md:text-4xl font-bold text-green-400 h-12"></p>
+<p id="next-char-info" class="text-lg text-yellow-400 mt-2 h-7"></p>
+</div>
+
+<!-- Input Area -->
+<div id="input-area">
+<form id="word-form">
+<input type="text" id="word-input" placeholder="単語をひらがなで入力..." class="w-full p-4 bg-gray-700 border-2 border-gray-600 rounded-lg text-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition" autocomplete="off">
+<button type="submit" class="w-full mt-4 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg text-xl transition transform hover:scale-105">
+こうげき！
+</button>
+</form>
+</div>
+
+<!-- Message Area -->
+<div id="message-area" class="text-center mt-6 min-h-[72px] flex items-center justify-center flex-col">
+<p id="message-text" class="text-xl font-bold"></p>
+<button id="reset-button" class="hidden mt-4 bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold py-2 px-6 rounded-lg transition">もう一度プレイ</button>
+</div>
+</div>
+
+<script>
+const player1HpElement = document.getElementById('player1-hp-bar');
+const player2HpElement = document.getElementById('player2-hp-bar');
+const player1HpText = document.getElementById('player1-hp-text');
+const player2HpText = document.getElementById('player2-hp-text');
+const player1Area = document.getElementById('player1-area');
+const player2Area = document.getElementById('player2-area');
+const lastWordElement = document.getElementById('last-word');
+const nextCharInfoElement = document.getElementById('next-char-info');
+const wordInputElement = document.getElementById('word-input');
+const wordForm = document.getElementById('word-form');
+const messageTextElement = document.getElementById('message-text');
+const resetButton = document.getElementById('reset-button');
+const inputArea = document.getElementById('input-area');
+const player1DamageContainer = document.getElementById('player1-damage-container');
+const player2DamageContainer = document.getElementById('player2-damage-container');
+
+const MAX_HP = 50;
+let player1HP;
+let player2HP;
+let currentWord;
+let usedWords;
+let currentPlayer; // 1 or 2
+let isGameOver;
+
+function normalizeChar(char) {
+const smallToLarge = { 'ぁ': 'あ', 'ぃ': 'い', 'ぅ': 'う', 'ぇ': 'え', 'ぉ': 'お', 'っ': 'つ', 'ゃ': 'や', 'ゅ': 'ゆ', 'ょ': 'よ', 'ゎ': 'わ' };
+return smallToLarge[char] || char;
+}
+
+function getFirstChar(word) {
+return normalizeChar(word[0]);
+}
+
+function getLastChar(word) {
+let lastChar = word.slice(-1);
+if (lastChar === 'ー') {
+lastChar = word.slice(-2, -1);
+}
+return normalizeChar(lastChar);
+}
+
+function init() {
+player1HP = MAX_HP;
+player2HP = MAX_HP;
+currentWord = 'しりとり';
+usedWords = new Set([currentWord]);
+currentPlayer = 1;
+isGameOver = false;
+
+updateUI();
+wordInputElement.disabled = false;
+wordInputElement.focus();
+inputArea.style.display = 'block';
+resetButton.classList.add('hidden');
+}
+
+function updateUI() {
+// HP Bars
+player1HpElement.style.width = `${(player1HP / MAX_HP) * 100}%`;
+player2HpElement.style.width = `${(player2HP / MAX_HP) * 100}%`;
+player1HpText.textContent = `${player1HP} / ${MAX_HP}`;
+player2HpText.textContent = `${player2HP} / ${MAX_HP}`;
+
+// Last Word
+lastWordElement.textContent = currentWord;
+
+// Turn indicator and next char info
+if (!isGameOver) {
+const nextChar = getLastChar(currentWord);
+nextCharInfoElement.textContent = `次は「${nextChar}」から始まる単語`;
+
+if (currentPlayer === 1) {
+player1Area.classList.add('active');
+player2Area.classList.remove('active');
+messageTextElement.innerHTML = `<span class="text-blue-300">PLAYER 1</span> のターン`;
+} else {
+player2Area.classList.add('active');
+player1Area.classList.remove('active');
+messageTextElement.innerHTML = `<span class="text-red-300">PLAYER 2</span> のターン`;
+}
+
+} else {
+nextCharInfoElement.textContent = '';
+player1Area.classList.remove('active');
+player2Area.classList.remove('active');
+}
+}
+
+function showDamage(amount, damagedPlayer) {
+const damageElement = document.createElement('div');
+damageElement.textContent = `-${amount} HIT!`;
+damageElement.className = 'damage-popup text-2xl font-bold font-game';
+
+if (damagedPlayer === 1) {
+damageElement.classList.add('text-red-500'); // Damaged by P2
+player1DamageContainer.appendChild(damageElement);
+} else { // damagedPlayer === 2
+damageElement.classList.add('text-blue-500'); // Damaged by P1
+player2DamageContainer.appendChild(damageElement);
+}
+
+setTimeout(() => {
+damageElement.remove();
+}, 1400);
+}
+
+wordForm.addEventListener('submit', (e) => {
+e.preventDefault();
+if (isGameOver) return;
+
+const newWord = wordInputElement.value.trim();
+wordInputElement.value = '';
+
+if (newWord.length === 0) return;
+
+// Validation
+const firstChar = getFirstChar(newWord);
+const lastCharOfPrev = getLastChar(currentWord);
+const lastCharOfNew = getLastChar(newWord);
+const opponent = currentPlayer === 1 ? 'PLAYER 2' : 'PLAYER 1';
+
+if (firstChar !== lastCharOfPrev) {
+endGame(opponent, `「${lastCharOfPrev}」から始まっていません！`);
+return;
+}
+if (lastCharOfNew === 'ん') {
+endGame(opponent, `「ん」がつきました！`);
+return;
+}
+if (usedWords.has(newWord)) {
+endGame(opponent, `「${newWord}」は既に使用されています！`);
+return;
+}
+if (!/^[ぁ-んー]+$/.test(newWord)) {
+endGame(opponent, `ひらがなで入力してください！`);
+return;
+}
+
+// Attack
+currentWord = newWord;
+usedWords.add(newWord);
+const damage = newWord.length;
+
+if (currentPlayer === 1) {
+player2HP = Math.max(0, player2HP - damage);
+showDamage(damage, 2);
+updateUI();
+if (player2HP <= 0) {
+endGame("PLAYER 1", "PLAYER 2のHPが0になった！");
+return;
+}
+currentPlayer = 2;
+} else {
+player1HP = Math.max(0, player1HP - damage);
+showDamage(damage, 1);
+updateUI();
+if (player1HP <= 0) {
+endGame("PLAYER 2", "PLAYER 1のHPが0になった！");
+return;
+}
+currentPlayer = 1;
+}
+
+updateUI();
+wordInputElement.focus();
+});
+
+function endGame(winner, reason) {
+isGameOver = true;
+wordInputElement.disabled = true;
+inputArea.style.display = 'none';
+resetButton.classList.remove('hidden');
+
+const winnerColor = winner === "PLAYER 1" ? "text-blue-400" : "text-red-400";
+
+messageTextElement.innerHTML = `<span class="${winnerColor}">${winner}の勝ち！</span><br>${reason}`;
+updateUI();
+}
+
+resetButton.addEventListener('click', init);
+
+// Initial game start
+init();
+</script>
+
+</body>
+</html>
